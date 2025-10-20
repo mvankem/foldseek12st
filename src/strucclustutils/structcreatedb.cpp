@@ -8,6 +8,7 @@
 #include "FastSort.h"
 
 #include "structureto3di.h"
+#include "structureto12st.h"
 #include "SubstitutionMatrix.h"
 #include "GemmiWrapper.h"
 #include "PulchraWrapper.h"
@@ -462,9 +463,11 @@ void compute3DiInterfaces(GemmiWrapper &readStructure, PulchraWrapper &pulchra, 
 
 size_t
 writeStructureEntry(SubstitutionMatrix & mat, GemmiWrapper & readStructure, StructureTo3Di & structureTo3Di,
-                    PulchraWrapper & pulchra, std::vector<char> & alphabet3di, std::vector<char> & alphabetAA,
-                    std::vector<int8_t> & camol, std::string & header, 
-                    DBWriter & aadbw, DBWriter & hdbw, DBWriter & torsiondbw, DBWriter & cadbw, int chainNameMode,
+                    StructureTo12St & structureTo12St,
+                    PulchraWrapper & pulchra, std::vector<char> & alphabet3di, std::vector<char> & alphabet12st,
+                    std::vector<char> & alphabetAA,
+                    std::vector<int8_t> & camol, std::string & header,
+                    DBWriter & aadbw, DBWriter & hdbw, DBWriter & torsiondbw, DBWriter & torsiondbw2, DBWriter & cadbw, int chainNameMode,
                     float maskBfactorThreshold, size_t & tooShort, size_t & notProtein, size_t & globalCnt, int thread_idx, int coordStoreMode,
                     size_t & fileidCnt, std::map<std::string, std::pair<size_t, unsigned int>> & entrynameToFileId,
                     std::map<std::string, size_t> & filenameToFileId,
@@ -520,12 +523,19 @@ writeStructureEntry(SubstitutionMatrix & mat, GemmiWrapper & readStructure, Stru
                                                             &readStructure.c[chainStart],
                                                             &readStructure.cb[chainStart],
                                                             chainLen);
+            char * states12st = structureTo12St.structure2states(&readStructure.ca[chainStart],
+                                                                  &readStructure.n[chainStart],
+                                                                  &readStructure.c[chainStart],
+                                                                  &readStructure.cb[chainStart],
+                                                                  chainLen);
             for (size_t pos = 0; pos < chainLen; pos++) {
                 if (readStructure.ca_bfactor[pos] < maskBfactorThreshold) {
                     alphabet3di.push_back(tolower(mat.num2aa[static_cast<int>(states[pos])]));
+                    alphabet12st.push_back(tolower(mat.num2aa[static_cast<int>(states12st[pos])]));
                     alphabetAA.push_back(tolower(readStructure.ami[chainStart+pos]));
                 } else {
                     alphabet3di.push_back(mat.num2aa[static_cast<int>(states[pos])]);
+                    alphabet12st.push_back(mat.num2aa[static_cast<int>(states12st[pos])]);
                     alphabetAA.push_back(readStructure.ami[chainStart+pos]);
                 }
             }
@@ -565,8 +575,10 @@ writeStructureEntry(SubstitutionMatrix & mat, GemmiWrapper & readStructure, Stru
             header.append(readStructure.names[ch]);
         }
         alphabet3di.push_back('\n');
+        alphabet12st.push_back('\n');
         alphabetAA.push_back('\n');
         torsiondbw.writeData(alphabet3di.data(), alphabet3di.size(), dbKey, thread_idx);
+        torsiondbw2.writeData(alphabet12st.data(), alphabet12st.size(), dbKey, thread_idx);
         aadbw.writeData(alphabetAA.data(), alphabetAA.size(), dbKey, thread_idx);
         header.push_back('\n');
         std::string entryName = Util::parseFastaHeader(header.c_str());
@@ -652,6 +664,7 @@ overflow:
         cadbw.writeData((const char*)camol.data(), chainLen * 3 * sizeof(float), dbKey, thread_idx);
 cleanup:
         alphabet3di.clear();
+        alphabet12st.clear();
         alphabetAA.clear();
         camol.clear();
         entriesAdded++;
@@ -923,6 +936,8 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
 
     DBWriter torsiondbw((outputName+"_ss").c_str(), (outputName+"_ss.index").c_str(), static_cast<unsigned int>(par.threads), par.compressed, Parameters::DBTYPE_AMINO_ACIDS);
     torsiondbw.open();
+    DBWriter torsiondbw2((outputName+"_ss2").c_str(), (outputName+"_ss2.index").c_str(), static_cast<unsigned int>(par.threads), par.compressed, Parameters::DBTYPE_AMINO_ACIDS);
+    torsiondbw2.open();
     DBWriter hdbw((outputName+"_h").c_str(), (outputName+"_h.index").c_str(), static_cast<unsigned int>(par.threads), par.compressed, Parameters::DBTYPE_GENERIC_DB);
     hdbw.open();
     DBWriter cadbw((outputName+"_ca").c_str(), (outputName+"_ca.index").c_str(), static_cast<unsigned int>(par.threads), par.compressed, LocalParameters::DBTYPE_CA_ALPHA);
@@ -1009,7 +1024,7 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
         }
 #endif
 
-#pragma omp parallel default(none) shared(tar, par, torsiondbw, hdbw, cadbw, aadbw, mat, progress, globalCnt, globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName, mappingWriter, std::cerr, std::cout, inputFormat) num_threads(localThreads) reduction(+:incorrectFiles, tooShort, notProtein, needToWriteModel)
+#pragma omp parallel default(none) shared(tar, par, torsiondbw, torsiondbw2, hdbw, cadbw, aadbw, mat, progress, globalCnt, globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName, mappingWriter, std::cerr, std::cout, inputFormat) num_threads(localThreads) reduction(+:incorrectFiles, tooShort, notProtein, needToWriteModel)
         {
             unsigned int thread_idx = 0;
 #ifdef OPENMP
@@ -1034,9 +1049,11 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
 #endif
             //recon_related
             StructureTo3Di structureTo3Di;
+            StructureTo12St structureTo12St;
             PulchraWrapper pulchra;
             GemmiWrapper readStructure;
             std::vector<char> alphabet3di;
+            std::vector<char> alphabet12st;
             std::vector<char> alphabetAA;
             std::vector<int8_t> camol;
             std::string header;
@@ -1147,8 +1164,8 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
 
                     __sync_add_and_fetch(&needToWriteModel, (readStructure.modelCount > 1));
                     writeStructureEntry(
-                        mat, readStructure, structureTo3Di, pulchra,
-                        alphabet3di, alphabetAA, camol, header, aadbw, hdbw, torsiondbw, cadbw,
+                        mat, readStructure, structureTo3Di, structureTo12St, pulchra,
+                        alphabet3di, alphabet12st, alphabetAA, camol, header, aadbw, hdbw, torsiondbw, torsiondbw2, cadbw,
                         par.chainNameMode, par.maskBfactorThreshold, tooShort, notProtein, globalCnt, thread_idx, par.coordStoreMode,
                         globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName,
                         mappingWriter
@@ -1163,7 +1180,7 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
 
 
     //===================== single_process ===================//__110710__//
-#pragma omp parallel default(none) shared(par, torsiondbw, hdbw, cadbw, aadbw, mat, looseFiles, progress, globalCnt, globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName, mappingWriter, inputFormat) reduction(+:incorrectFiles, tooShort, notProtein, needToWriteModel)
+#pragma omp parallel default(none) shared(par, torsiondbw, torsiondbw2, hdbw, cadbw, aadbw, mat, looseFiles, progress, globalCnt, globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName, mappingWriter, inputFormat) reduction(+:incorrectFiles, tooShort, notProtein, needToWriteModel)
     {
         unsigned int thread_idx = 0;
 #ifdef OPENMP
@@ -1171,9 +1188,11 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
 #endif
         //recon_related
         StructureTo3Di structureTo3Di;
+        StructureTo12St structureTo12St;
         PulchraWrapper pulchra;
         GemmiWrapper readStructure;
         std::vector<char> alphabet3di;
+        std::vector<char> alphabet12st;
         std::vector<char> alphabetAA;
         std::vector<int8_t> camol;
         std::string header;
@@ -1190,8 +1209,8 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
             __sync_add_and_fetch(&needToWriteModel, (readStructure.modelCount > 1));
             // clear memory
             writeStructureEntry(
-                mat, readStructure, structureTo3Di,  pulchra,
-                alphabet3di, alphabetAA, camol, header, aadbw, hdbw, torsiondbw, cadbw,
+                mat, readStructure, structureTo3Di, structureTo12St, pulchra,
+                alphabet3di, alphabet12st, alphabetAA, camol, header, aadbw, hdbw, torsiondbw, torsiondbw2, cadbw,
                 par.chainNameMode, par.maskBfactorThreshold, tooShort, notProtein, globalCnt, thread_idx, par.coordStoreMode,
                 globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName,
                 mappingWriter
@@ -1218,12 +1237,14 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
             filter = parts[2][0];
         }
         progress.reset(SIZE_MAX);
-#pragma omp parallel default(none) shared(par, torsiondbw, hdbw, cadbw, aadbw, mat, gcsPaths, progress, globalCnt, globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName, client, bucket_name, filter, mappingWriter) reduction(+:incorrectFiles, tooShort, notProtein, needToWriteModel, inputFormat)
+#pragma omp parallel default(none) shared(par, torsiondbw, torsiondbw2, hdbw, cadbw, aadbw, mat, gcsPaths, progress, globalCnt, globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName, client, bucket_name, filter, mappingWriter) reduction(+:incorrectFiles, tooShort, notProtein, needToWriteModel, inputFormat)
         {
             StructureTo3Di structureTo3Di;
+            StructureTo12St structureTo12St;
             PulchraWrapper pulchra;
             GemmiWrapper readStructure;
             std::vector<char> alphabet3di;
+            std::vector<char> alphabet12st;
             std::vector<char> alphabetAA;
             std::vector<int8_t> camol;
             std::string header;
@@ -1232,7 +1253,7 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
 #pragma omp single
             for (auto&& object_metadata : client.ListObjects(bucket_name, gcs::Projection::NoAcl(), gcs::MaxResults(15000))) {
                 std::string obj_name = object_metadata->name();
-#pragma omp task firstprivate(obj_name, alphabet3di, alphabetAA, camol, header, name, filter) private(structureTo3Di, pulchra, readStructure)
+#pragma omp task firstprivate(obj_name, alphabet3di, alphabet12st, alphabetAA, camol, header, name, filter) private(structureTo3Di, structureTo12St, pulchra, readStructure)
                 {
                     bool skipFilter = filter != '\0' && obj_name.length() >= 9 && obj_name[8] == filter;
                     bool allowedSuffix = Util::endsWith(".cif", obj_name) || Util::endsWith(".pdb", obj_name);
@@ -1253,8 +1274,8 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
                             } else {
                                 __sync_add_and_fetch(&needToWriteModel, (readStructure.modelCount > 1));
                                 writeStructureEntry(
-                                    mat, readStructure, structureTo3Di,  pulchra,
-                                    alphabet3di, alphabetAA, camol, header, aadbw, hdbw, torsiondbw, cadbw,
+                                    mat, readStructure, structureTo3Di, structureTo12St, pulchra,
+                                    alphabet3di, alphabet12st, alphabetAA, camol, header, aadbw, hdbw, torsiondbw, torsiondbw2, cadbw,
                                     par.chainNameMode, par.maskBfactorThreshold, tooShort, notProtein, globalCnt, thread_idx, par.coordStoreMode,
                                     globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName,
                                     mappingWriter
@@ -1272,12 +1293,14 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
         DBReader<unsigned int> reader(dbs[i].c_str(), (dbs[i]+".index").c_str(), par.threads, DBReader<unsigned int>::USE_INDEX|DBReader<unsigned int>::USE_DATA|DBReader<unsigned int>::USE_LOOKUP);
         reader.open(DBReader<unsigned int>::LINEAR_ACCCESS);
         progress.reset(reader.getSize());
-#pragma omp parallel default(none) shared(par, torsiondbw, hdbw, cadbw, aadbw, mat, progress, globalCnt, globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName, reader, mappingWriter, inputFormat) reduction(+:incorrectFiles, tooShort, notProtein, needToWriteModel)
+#pragma omp parallel default(none) shared(par, torsiondbw, torsiondbw2, hdbw, cadbw, aadbw, mat, progress, globalCnt, globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName, reader, mappingWriter, inputFormat) reduction(+:incorrectFiles, tooShort, notProtein, needToWriteModel)
         {
             StructureTo3Di structureTo3Di;
+            StructureTo12St structureTo12St;
             PulchraWrapper pulchra;
             GemmiWrapper readStructure;
             std::vector<char> alphabet3di;
+            std::vector<char> alphabet12st;
             std::vector<char> alphabetAA;
             std::vector<int8_t> camol;
             std::string header;
@@ -1304,8 +1327,8 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
                 } else {
                     __sync_add_and_fetch(&needToWriteModel, (readStructure.modelCount > 1));
                     writeStructureEntry(
-                        mat, readStructure, structureTo3Di,  pulchra,
-                        alphabet3di, alphabetAA, camol, header, aadbw, hdbw, torsiondbw, cadbw,
+                        mat, readStructure, structureTo3Di, structureTo12St, pulchra,
+                        alphabet3di, alphabet12st, alphabetAA, camol, header, aadbw, hdbw, torsiondbw, torsiondbw2, cadbw,
                         par.chainNameMode, par.maskBfactorThreshold, tooShort, notProtein, globalCnt, thread_idx, par.coordStoreMode,
                         globalFileidCnt, entrynameToFileId, filenameToFileId, fileIdToName,
                         mappingWriter
@@ -1317,6 +1340,7 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
     }
 
     torsiondbw.close(true);
+    torsiondbw2.close(true);
     hdbw.close(true);
     cadbw.close(true);
     aadbw.close(true);
@@ -1388,6 +1412,15 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
         torsiondbw_reorder.close(true);
         torsiondbr_reorder.close();
 
+        DBReader<unsigned int> torsiondbr2_reorder((outputName+"_ss2").c_str(), (outputName+"_ss2.index").c_str(), par.threads, DBReader<unsigned int>::USE_INDEX|DBReader<unsigned int>::USE_DATA);
+        torsiondbr2_reorder.open(DBReader<unsigned int>::NOSORT);
+        torsiondbr2_reorder.readMmapedDataInMemory();
+        DBWriter torsiondbw2_reorder((outputName+"_ss2").c_str(), (outputName+"_ss2.index").c_str(), static_cast<unsigned int>(par.threads), par.compressed, Parameters::DBTYPE_AMINO_ACIDS);
+        torsiondbw2_reorder.open();
+        sortDatafileByIdOrder(torsiondbw2_reorder, torsiondbr2_reorder, mappingOrder);
+        torsiondbw2_reorder.close(true);
+        torsiondbr2_reorder.close();
+
         DBReader<unsigned int> cadbr_reorder((outputName+"_ca").c_str(), (outputName+"_ca.index").c_str(), par.threads, DBReader<unsigned int>::USE_INDEX|DBReader<unsigned int>::USE_DATA);
         cadbr_reorder.open(DBReader<unsigned int>::NOSORT);
         cadbr_reorder.readMmapedDataInMemory();
@@ -1418,6 +1451,7 @@ int structcreatedb(int argc, const char **argv, const Command& command) {
         }
     } else {
         DBWriter::createRenumberedDB((outputName+"_ss").c_str(), (outputName+"_ss.index").c_str(), "", "", DBReader<unsigned int>::LINEAR_ACCCESS);
+        DBWriter::createRenumberedDB((outputName+"_ss2").c_str(), (outputName+"_ss2.index").c_str(), "", "", DBReader<unsigned int>::LINEAR_ACCCESS);
         DBWriter::createRenumberedDB((outputName+"_h").c_str(), (outputName+"_h.index").c_str(), "", "", DBReader<unsigned int>::LINEAR_ACCCESS);
         DBWriter::createRenumberedDB((outputName+"_ca").c_str(), (outputName+"_ca.index").c_str(), "", "", DBReader<unsigned int>::LINEAR_ACCCESS);
         DBWriter::createRenumberedDB((outputName).c_str(), (outputName+".index").c_str(), "", "", DBReader<unsigned int>::LINEAR_ACCCESS);
