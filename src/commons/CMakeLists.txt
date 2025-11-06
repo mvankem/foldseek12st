@@ -9,4 +9,6 @@ set(commons_source_files
         commons/TMaligner.h
         commons/StructureSmithWaterman.cpp
         commons/StructureSmithWaterman.h
+        commons/Simple3AlphSW.cpp
+        commons/Simple3AlphSW.h
         PARENT_SCOPE)

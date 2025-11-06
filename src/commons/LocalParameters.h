@@ -32,6 +32,7 @@ public:
     static const int ALIGNMENT_TYPE_TMALIGN = 1;
     static const int ALIGNMENT_TYPE_3DI_AA = 2;
     static const int ALIGNMENT_TYPE_LOLALIGN = 3;
+    static const int ALIGNMENT_TYPE_3DI_12ST_AA = 4;
 
     static const int TMSCORE_THRESHOLD_MODE_ALIGNMENT = 0;
     static const int TMSCORE_THRESHOLD_MODE_QUERY = 1;
