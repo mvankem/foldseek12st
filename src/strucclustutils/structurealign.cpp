@@ -139,8 +139,8 @@ int computeAlternativeAlignment(StructureSmithWaterman & structureSmithWaterman,
 }
 
 // Helper function to create 12st substitution matrix (13x13)
-// Returns int8_t** with hardcoded matrix values scaled by 2.1
-int8_t** create12stSubMat() {
+// Returns int8_t** with matrix values scaled by the provided scale factor
+int8_t** create12stSubMat(float scale) {
     // 12st matrix: 13x13 (ABCDEFGHIJKLX) - from TestSimple3AlphSW.cpp
     const float SUBMAT_12ST_FLOAT[13][13] = {
         {2.431, -0.264, -2.745, -0.281, -2.328, -2.291, 0.02, 0.47, -2.831, -3.038, -0.462, -0.509, 0.358},
@@ -158,15 +158,13 @@ int8_t** create12stSubMat() {
         {0.358, -0.995, -0.762, 0.664, -1.495, -1.689, -0.453, -0.113, -0.75, -0.117, 0.25, 0.72, 5.802}
     };
 
-    const float SUBMAT_12ST_SCALE = 2.1f;
-
     // Allocate int8_t matrix
     int8_t** discretized = new int8_t*[13];
     for (int i = 0; i < 13; i++) {
         discretized[i] = new int8_t[13];
         for (int j = 0; j < 13; j++) {
             // Apply scaling and round to int8_t
-            float scaled = SUBMAT_12ST_FLOAT[i][j] * SUBMAT_12ST_SCALE;
+            float scaled = SUBMAT_12ST_FLOAT[i][j] * scale;
             discretized[i][j] = (int8_t)round(scaled);  // FOR DEBUGGING PURPOSES!
         }
     }
@@ -446,7 +444,7 @@ int structurealign(int argc, const char **argv, const Command& command) {
     // Initialize 12st substitution matrix if alignment type is 4
     int8_t** submat_12st = NULL;
     if (par.alignmentType == LocalParameters::ALIGNMENT_TYPE_3DI_12ST_AA) {
-        submat_12st = create12stSubMat();
+        submat_12st = create12stSubMat(par.submat12stScale);
     }
 
 #pragma omp parallel
