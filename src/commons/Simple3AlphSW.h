@@ -161,6 +161,10 @@ private:
     int alignStartRow;
     int alignStartCol;
 
+    // Gap penalties from last align() call
+    int lastGapOpen;
+    int lastGapExtend;
+
     // Helper methods
 
     /**

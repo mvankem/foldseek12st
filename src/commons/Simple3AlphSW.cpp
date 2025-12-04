@@ -25,7 +25,9 @@ Simple3AlphSW::Simple3AlphSW()
       maxScoreRow(0),
       maxScoreCol(0),
       alignStartRow(0),
-      alignStartCol(0)
+      alignStartCol(0),
+      lastGapOpen(0),
+      lastGapExtend(0)
 {
     // Memory will be allocated in init_ssw based on actual query length
 }
@@ -165,6 +167,10 @@ int Simple3AlphSW::align(
     tSeq3Di = t_3di_seq;
     tSeq12st = t_12st_seq;
     targetLen = target_len;
+
+    // Store gap penalties for backtrace
+    lastGapOpen = gap_open;
+    lastGapExtend = gap_extend;
 
     // Fill DP matrix (with optional backtrace)
     fillDPMatrix(t_aa_seq, t_3di_seq, t_12st_seq, target_len, gap_open, gap_extend, compute_backtrace);
@@ -313,14 +319,14 @@ void Simple3AlphSW::backtrace(std::string& result) {
             // Check which state to follow (Python checks: q_gap, t_gap, match)
             if (scoreMatrix[idx] == queryGapMatrix[idx]) {
                 // Check if we're extending a gap
-                if (queryGapMatrix[idx] == queryGapMatrix[left_idx] - 1) {  // gap_extend=1
+                if (queryGapMatrix[idx] == queryGapMatrix[left_idx] - lastGapExtend) {
                     pos = QGAP_MAT;
                 }
                 result += 'D';
                 j--;
             } else if (scoreMatrix[idx] == targetGapMatrix[idx]) {
                 // Check if we're extending a gap
-                if (targetGapMatrix[idx] == targetGapMatrix[up_idx] - 1) {  // gap_extend=1
+                if (targetGapMatrix[idx] == targetGapMatrix[up_idx] - lastGapExtend) {
                     pos = TGAP_MAT;
                 }
                 result += 'I';
@@ -344,14 +350,14 @@ void Simple3AlphSW::backtrace(std::string& result) {
             }
         } else if (pos == QGAP_MAT) {
             // In query gap state: check if we're at gap open
-            if (queryGapMatrix[idx] == scoreMatrix[left_idx] - 10) {  // gap_open=10
+            if (queryGapMatrix[idx] == scoreMatrix[left_idx] - lastGapOpen) {
                 pos = S_MAT;
             }
             result += 'D';
             j--;
         } else if (pos == TGAP_MAT) {
             // In target gap state: check if we're at gap open
-            if (targetGapMatrix[idx] == scoreMatrix[up_idx] - 10) {  // gap_open=10
+            if (targetGapMatrix[idx] == scoreMatrix[up_idx] - lastGapOpen) {
                 pos = S_MAT;
             }
             result += 'I';
