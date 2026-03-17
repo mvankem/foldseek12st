@@ -537,6 +537,22 @@ int structurealign(int argc, const char **argv, const Command& command) {
                     qSeqAA.reverse();
                     reverseStructureSmithWaterman.ssw_init(&qSeqAA, &qSeq3Di, tinySubMatAA, tinySubMat3Di, &subMatAA);
                 } else {
+                    // Mask 12st query positions where 3Di is D/V/P and 12st is G/H/I -> X
+                    const unsigned char numD = subMat3Di.aa2num[(int)'D'];
+                    const unsigned char numV = subMat3Di.aa2num[(int)'V'];
+                    const unsigned char numP = subMat3Di.aa2num[(int)'P'];
+                    const unsigned char numG = subMat3Di.aa2num[(int)'G'];
+                    const unsigned char numH = subMat3Di.aa2num[(int)'H'];
+                    const unsigned char numI = subMat3Di.aa2num[(int)'I'];
+                    const unsigned char numX = 12; // X is index 12 in 12st submat
+                    for (int pos = 0; pos < (int)querySeqLen; pos++) {
+                        unsigned char s3di = qSeq3Di.numSequence[pos];
+                        unsigned char s12st = qSeq12st->numSequence[pos];
+                        if ((s3di == numD || s3di == numV || s3di == numP) &&
+                            (s12st == numG || s12st == numH || s12st == numI)) {
+                            qSeq12st->numSequence[pos] = numX;
+                        }
+                    }
                     // Initialize Simple3AlphSW for alignment type 4 (3Di+AA+12st)
                     // First initialize forward aligner
                     simple3AlphSW.init_ssw(
